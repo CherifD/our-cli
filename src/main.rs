@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 const DEFAULT_MODEL: &str = "gpt-5.4-mini";
 const DEFAULT_INSTRUCTIONS: &str = "You are a concise terminal assistant. Answer directly, avoid markdown tables unless useful, and keep responses practical.";
-const DEFAULT_PROMPT_COLOR: &str = "b84367fc";
+const DEFAULT_PROMPT_COLOR: &str = "d8ae6dfc";
 const DEFAULT_ASSISTANT_COLOR: &str = "00ffff";
 
 #[derive(Parser)]

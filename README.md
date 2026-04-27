@@ -108,7 +108,7 @@ our-cli reset
 Defaults:
 
 ```sh
-OUR_CLI_PROMPT_COLOR=b84367fc
+OUR_CLI_PROMPT_COLOR=d8ae6dfc
 OUR_CLI_ASSISTANT_COLOR=00ffff
 ```
 
