@@ -68,6 +68,8 @@ our-cli reset
 our-cli --help
 ```
 
+In `our-cli chat`, enter or paste one or more lines, then press return on a blank line to send the message. Type `/exit` or `/quit` as the first line of a message to leave chat.
+
 ## Local Install
 
 ```sh

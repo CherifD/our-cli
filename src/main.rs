@@ -35,6 +35,13 @@ struct AgentResponse {
     total_tokens: Option<u64>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum ChatInput {
+    Message(String),
+    Exit,
+    Eof,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -61,30 +68,67 @@ fn prompt(message: String) -> Result<()> {
 }
 
 fn chat() -> Result<()> {
-    println!("our-cli chat. Type /exit to quit.");
+    println!("our-cli chat. Finish a message with a blank line. Type /exit to quit.");
+    let stdin = io::stdin();
+    let mut reader = stdin.lock();
 
     loop {
-        print_prompt()?;
+        let message = match read_chat_message(&mut reader)? {
+            ChatInput::Message(message) => message,
+            ChatInput::Exit | ChatInput::Eof => break,
+        };
 
-        let mut message = String::new();
-        if io::stdin().read_line(&mut message)? == 0 {
-            reset_color();
-            break;
-        }
-        reset_color();
-
-        let message = message.trim();
-        if message.is_empty() || message == "/exit" || message == "/quit" {
-            break;
-        }
-
-        let transcript = build_transcript(message)?;
+        let transcript = build_transcript(&message)?;
         let response = ask_agent(&transcript)?;
         save_exchange(&transcript, &response.text)?;
         print_response(&response);
     }
 
     Ok(())
+}
+
+fn read_chat_message<R: io::BufRead>(reader: &mut R) -> Result<ChatInput> {
+    read_chat_message_inner(reader, true)
+}
+
+fn read_chat_message_inner<R: io::BufRead>(reader: &mut R, show_prompt: bool) -> Result<ChatInput> {
+    let mut lines = Vec::new();
+
+    loop {
+        if show_prompt {
+            print_prompt(lines.is_empty())?;
+        }
+
+        let mut line = String::new();
+        if reader.read_line(&mut line)? == 0 {
+            if show_prompt {
+                reset_color();
+            }
+            return if lines.is_empty() {
+                Ok(ChatInput::Eof)
+            } else {
+                Ok(ChatInput::Message(lines.join("\n")))
+            };
+        }
+
+        if show_prompt {
+            reset_color();
+        }
+
+        let line = line.trim_end_matches(['\r', '\n']);
+        if lines.is_empty() && (line == "/exit" || line == "/quit") {
+            return Ok(ChatInput::Exit);
+        }
+
+        if line.is_empty() {
+            if lines.is_empty() {
+                continue;
+            }
+            return Ok(ChatInput::Message(lines.join("\n")));
+        }
+
+        lines.push(line.to_string());
+    }
 }
 
 fn history() -> Result<()> {
@@ -258,14 +302,16 @@ fn print_response(response: &AgentResponse) {
     }
 }
 
-fn print_prompt() -> Result<()> {
+fn print_prompt(first_line: bool) -> Result<()> {
+    let marker = if first_line { "> " } else { "| " };
     if use_color() {
         print!(
-            "{}> ",
-            color_sequence("OUR_CLI_PROMPT_COLOR", DEFAULT_PROMPT_COLOR)
+            "{}{}",
+            color_sequence("OUR_CLI_PROMPT_COLOR", DEFAULT_PROMPT_COLOR),
+            marker
         );
     } else {
-        print!("> ");
+        print!("{marker}");
     }
     io::stdout().flush()?;
     Ok(())
@@ -393,5 +439,49 @@ mod tests {
         let text = "one\ntwo\n";
 
         assert_eq!(trim_history_lines_to(text, 4), text);
+    }
+
+    #[test]
+    fn reads_multiline_chat_message_until_blank_line() {
+        let input = b"first line\nsecond line\n\n";
+        let mut reader = &input[..];
+
+        assert_eq!(
+            read_chat_message_inner(&mut reader, false).unwrap(),
+            ChatInput::Message("first line\nsecond line".to_string())
+        );
+    }
+
+    #[test]
+    fn reads_single_line_chat_message_after_blank_submit() {
+        let input = b"hello\n\n";
+        let mut reader = &input[..];
+
+        assert_eq!(
+            read_chat_message_inner(&mut reader, false).unwrap(),
+            ChatInput::Message("hello".to_string())
+        );
+    }
+
+    #[test]
+    fn exits_chat_when_exit_is_first_line() {
+        let input = b"/exit\n";
+        let mut reader = &input[..];
+
+        assert_eq!(
+            read_chat_message_inner(&mut reader, false).unwrap(),
+            ChatInput::Exit
+        );
+    }
+
+    #[test]
+    fn sends_buffered_message_on_eof() {
+        let input = b"line without blank submit";
+        let mut reader = &input[..];
+
+        assert_eq!(
+            read_chat_message_inner(&mut reader, false).unwrap(),
+            ChatInput::Message("line without blank submit".to_string())
+        );
     }
 }
