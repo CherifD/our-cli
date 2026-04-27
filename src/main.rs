@@ -1,6 +1,13 @@
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand};
 use reqwest::blocking::Client;
+use rustyline::completion::{Completer, Pair};
+use rustyline::error::ReadlineError;
+use rustyline::highlight::Highlighter;
+use rustyline::hint::Hinter;
+use rustyline::history::DefaultHistory;
+use rustyline::validate::{ValidationContext, ValidationResult, Validator};
+use rustyline::{Context as RustylineContext, Editor, Helper};
 use serde_json::{json, Value};
 use std::env;
 use std::fs;
@@ -42,6 +49,35 @@ enum ChatInput {
     Eof,
 }
 
+struct MultilineHelper;
+
+impl Helper for MultilineHelper {}
+
+impl Completer for MultilineHelper {
+    type Candidate = Pair;
+
+    fn complete(
+        &self,
+        _line: &str,
+        _pos: usize,
+        _ctx: &RustylineContext<'_>,
+    ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
+        Ok((0, Vec::new()))
+    }
+}
+
+impl Hinter for MultilineHelper {
+    type Hint = String;
+}
+
+impl Highlighter for MultilineHelper {}
+
+impl Validator for MultilineHelper {
+    fn validate(&self, ctx: &mut ValidationContext<'_>) -> rustyline::Result<ValidationResult> {
+        Ok(validate_chat_editor_input(ctx.input()))
+    }
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -69,6 +105,11 @@ fn prompt(message: String) -> Result<()> {
 
 fn chat() -> Result<()> {
     println!("our-cli chat. Finish a message with a blank line. Type /exit to quit.");
+
+    if io::stdin().is_terminal() {
+        return chat_with_editor();
+    }
+
     let stdin = io::stdin();
     let mut reader = stdin.lock();
 
@@ -82,6 +123,35 @@ fn chat() -> Result<()> {
         let response = ask_agent(&transcript)?;
         save_exchange(&transcript, &response.text)?;
         print_response(&response);
+    }
+
+    Ok(())
+}
+
+fn chat_with_editor() -> Result<()> {
+    let mut editor: Editor<MultilineHelper, DefaultHistory> = Editor::new()?;
+    editor.set_helper(Some(MultilineHelper));
+
+    loop {
+        match editor.readline(&editor_prompt()) {
+            Ok(input) => {
+                let message = normalize_chat_editor_input(&input);
+                if message.trim().is_empty() {
+                    continue;
+                }
+                if is_exit_command(&message) {
+                    break;
+                }
+
+                let _ = editor.add_history_entry(message.as_str());
+                let transcript = build_transcript(&message)?;
+                let response = ask_agent(&transcript)?;
+                save_exchange(&transcript, &response.text)?;
+                print_response(&response);
+            }
+            Err(ReadlineError::Interrupted | ReadlineError::Eof) => break,
+            Err(error) => return Err(anyhow!("Could not read chat input: {error}")),
+        }
     }
 
     Ok(())
@@ -116,7 +186,7 @@ fn read_chat_message_inner<R: io::BufRead>(reader: &mut R, show_prompt: bool) ->
         }
 
         let line = line.trim_end_matches(['\r', '\n']);
-        if lines.is_empty() && (line == "/exit" || line == "/quit") {
+        if lines.is_empty() && is_exit_command(line) {
             return Ok(ChatInput::Exit);
         }
 
@@ -129,6 +199,27 @@ fn read_chat_message_inner<R: io::BufRead>(reader: &mut R, show_prompt: bool) ->
 
         lines.push(line.to_string());
     }
+}
+
+fn validate_chat_editor_input(input: &str) -> ValidationResult {
+    let normalized = normalize_chat_editor_input(input);
+
+    if normalized.trim().is_empty() || is_exit_command(&normalized) || input.ends_with('\n') {
+        ValidationResult::Valid(None)
+    } else {
+        ValidationResult::Incomplete
+    }
+}
+
+fn normalize_chat_editor_input(input: &str) -> String {
+    input
+        .replace("\r\n", "\n")
+        .trim_end_matches(['\r', '\n'])
+        .to_string()
+}
+
+fn is_exit_command(input: &str) -> bool {
+    matches!(input.trim(), "/exit" | "/quit")
 }
 
 fn history() -> Result<()> {
@@ -317,6 +408,19 @@ fn print_prompt(first_line: bool) -> Result<()> {
     Ok(())
 }
 
+fn editor_prompt() -> String {
+    let marker = "> ";
+    if use_color() {
+        format!(
+            "{}{}\x1b[0m",
+            color_sequence("OUR_CLI_PROMPT_COLOR", DEFAULT_PROMPT_COLOR),
+            marker
+        )
+    } else {
+        marker.to_string()
+    }
+}
+
 fn reset_color() {
     if use_color() {
         print!("\x1b[0m");
@@ -483,5 +587,37 @@ mod tests {
             read_chat_message_inner(&mut reader, false).unwrap(),
             ChatInput::Message("line without blank submit".to_string())
         );
+    }
+
+    #[test]
+    fn editor_input_is_incomplete_until_blank_submit() {
+        assert!(matches!(
+            validate_chat_editor_input("first line"),
+            ValidationResult::Incomplete
+        ));
+    }
+
+    #[test]
+    fn editor_input_is_valid_after_blank_submit() {
+        assert!(matches!(
+            validate_chat_editor_input("first line\n"),
+            ValidationResult::Valid(None)
+        ));
+    }
+
+    #[test]
+    fn editor_input_normalizes_trailing_submit_newline() {
+        assert_eq!(
+            normalize_chat_editor_input("first line\nsecond line\n"),
+            "first line\nsecond line"
+        );
+    }
+
+    #[test]
+    fn editor_exit_command_is_valid_immediately() {
+        assert!(matches!(
+            validate_chat_editor_input("/exit"),
+            ValidationResult::Valid(None)
+        ));
     }
 }
