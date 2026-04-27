@@ -29,6 +29,19 @@ cargo test
 cargo build
 ```
 
+## CI
+
+GitHub Actions runs on every pull request to `main` and every push to `main`. CI is split into separate checks so failures are easy to diagnose:
+
+| Check | Command |
+| --- | --- |
+| `format` | `cargo fmt -- --check` |
+| `clippy` | `cargo clippy --all-targets -- -D warnings` |
+| `test` | `cargo test` |
+| `build` | `cargo build` |
+
+The `main` branch is protected. Pull requests must be up to date and pass all four checks before they can be merged. Merged PR branches are deleted automatically.
+
 ## Run
 
 ```sh
