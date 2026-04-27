@@ -20,6 +20,15 @@ cargo build
 sh scripts/check.sh
 ```
 
+The check script runs:
+
+```sh
+cargo fmt -- --check
+cargo clippy --all-targets -- -D warnings
+cargo test
+cargo build
+```
+
 ## Run
 
 ```sh

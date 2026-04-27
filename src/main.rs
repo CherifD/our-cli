@@ -129,8 +129,7 @@ fn save_exchange(transcript: &str, answer: &str) -> Result<()> {
         fs::create_dir_all(parent)?;
     }
 
-    let mut text = format!("{transcript}\n\nAssistant: {answer}\n\n");
-    text = trim_history_lines(&text);
+    let text = trim_history_lines(&format!("{transcript}\n\nAssistant: {answer}\n\n"));
     fs::write(path, text)?;
     Ok(())
 }
@@ -142,6 +141,10 @@ fn trim_history_lines(text: &str) -> String {
         .filter(|value| *value > 0)
         .unwrap_or(240);
 
+    trim_history_lines_to(text, max_lines)
+}
+
+fn trim_history_lines_to(text: &str, max_lines: usize) -> String {
     let lines: Vec<&str> = text.lines().collect();
     if lines.len() <= max_lines {
         return text.to_string();
@@ -237,8 +240,8 @@ fn extract_response_text(body: &Value) -> Option<String> {
 
 fn print_response(response: &AgentResponse) {
     if use_color() {
-        print!(
-            "{}{}\x1b[0m\n",
+        println!(
+            "{}{}\x1b[0m",
             color_sequence("OUR_CLI_ASSISTANT_COLOR", DEFAULT_ASSISTANT_COLOR),
             response.text
         );
@@ -285,9 +288,14 @@ fn use_color() -> bool {
 
 fn color_sequence(env_name: &str, fallback: &str) -> String {
     let value = env::var(env_name).unwrap_or_else(|_| fallback.to_string());
-    let color = parse_hex_color(&value).or_else(|| parse_hex_color(fallback));
-    let (red, green, blue) = color.unwrap_or((255, 255, 255));
+    let (red, green, blue) = resolve_hex_color(&value, fallback);
     format!("\x1b[38;2;{red};{green};{blue}m")
+}
+
+fn resolve_hex_color(value: &str, fallback: &str) -> (u8, u8, u8) {
+    parse_hex_color(value)
+        .or_else(|| parse_hex_color(fallback))
+        .unwrap_or((255, 255, 255))
 }
 
 fn parse_hex_color(value: &str) -> Option<(u8, u8, u8)> {
@@ -309,4 +317,81 @@ fn state_path() -> Result<PathBuf> {
     let config_dir =
         dirs::config_dir().ok_or_else(|| anyhow!("Could not locate user config directory."))?;
     Ok(config_dir.join("our-cli").join("conversation.txt"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_hex_color_with_hash() {
+        assert_eq!(parse_hex_color("#b84367"), Some((184, 67, 103)));
+    }
+
+    #[test]
+    fn parses_hex_color_with_alpha_ignored() {
+        assert_eq!(parse_hex_color("b84367fc"), Some((184, 67, 103)));
+    }
+
+    #[test]
+    fn rejects_invalid_hex_color() {
+        assert_eq!(parse_hex_color("nothex"), None);
+        assert_eq!(parse_hex_color("12345"), None);
+    }
+
+    #[test]
+    fn resolves_invalid_color_to_fallback() {
+        assert_eq!(resolve_hex_color("nothex", "00ffff"), (0, 255, 255));
+    }
+
+    #[test]
+    fn extracts_output_text_shortcut() {
+        let body = json!({
+            "output_text": "hello",
+            "usage": { "total_tokens": 12 }
+        });
+
+        assert_eq!(extract_response_text(&body).as_deref(), Some("hello"));
+    }
+
+    #[test]
+    fn extracts_response_text_from_output_messages() {
+        let body = json!({
+            "output": [
+                {
+                    "type": "message",
+                    "content": [
+                        { "type": "output_text", "text": "first" },
+                        { "type": "output_text", "text": "second" }
+                    ]
+                }
+            ]
+        });
+
+        assert_eq!(
+            extract_response_text(&body).as_deref(),
+            Some("first\nsecond")
+        );
+    }
+
+    #[test]
+    fn returns_none_when_response_has_no_output() {
+        let body = json!({ "id": "response_without_text" });
+
+        assert_eq!(extract_response_text(&body), None);
+    }
+
+    #[test]
+    fn trims_history_to_requested_lines() {
+        let text = "one\ntwo\nthree\nfour\n";
+
+        assert_eq!(trim_history_lines_to(text, 2), "three\nfour\n");
+    }
+
+    #[test]
+    fn leaves_short_history_unchanged() {
+        let text = "one\ntwo\n";
+
+        assert_eq!(trim_history_lines_to(text, 4), text);
+    }
 }
