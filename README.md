@@ -107,3 +107,7 @@ OUR_CLI_COLOR=never our-cli chat
 | `OUR_CLI_ASSISTANT_COLOR` | Optional assistant response color as hex |
 | `OUR_CLI_MOCK_RESPONSE` | Offline test response |
 | `OUR_CLI_MOCK_TOTAL_TOKENS` | Offline test token count |
+
+## License
+
+This project is open source and available under the MIT License.
