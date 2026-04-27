@@ -2,7 +2,7 @@
 name = "our-cli"
 version = "0.1.0"
 edition = "2021"
-description = "A macOS Rust CLI twin of asm-agent."
+description = "A cross-platform Rust CLI twin of asm-agent."
 license = "MIT"
 
 [package.metadata]

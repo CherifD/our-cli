@@ -12,8 +12,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  format:
-    name: format
+  format-macos:
+    name: format (macOS)
     runs-on: macos-latest
 
     steps:
@@ -31,8 +31,27 @@ jobs:
       - name: Check formatting
         run: cargo fmt -- --check
 
-  clippy:
-    name: clippy
+  format-windows:
+    name: format (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt -- --check
+
+  clippy-macos:
+    name: clippy (macOS)
     runs-on: macos-latest
 
     steps:
@@ -50,8 +69,27 @@ jobs:
       - name: Lint
         run: cargo clippy --all-targets -- -D warnings
 
-  test:
-    name: test
+  clippy-windows:
+    name: clippy (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Lint
+        run: cargo clippy --all-targets -- -D warnings
+
+  test-macos:
+    name: test (macOS)
     runs-on: macos-latest
 
     steps:
@@ -69,9 +107,47 @@ jobs:
       - name: Test
         run: cargo test
 
-  build:
-    name: build
+  test-windows:
+    name: test (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Test
+        run: cargo test
+
+  build-macos:
+    name: build (macOS)
     runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build
+
+  build-windows:
+    name: build (Windows)
+    runs-on: windows-latest
 
     steps:
       - name: Checkout

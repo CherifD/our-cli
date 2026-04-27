@@ -1,10 +1,10 @@
 # our-cli
 
-`our-cli` is a Rust twin of `asm-agent`: a macOS-friendly CLI that talks to OpenAI, remembers local conversation history, prints token usage, and supports configurable terminal colors.
+`our-cli` is a Rust twin of `asm-agent`: a cross-platform CLI that talks to OpenAI, remembers local conversation history, prints token usage, and supports configurable terminal colors.
 
 ## Requirements
 
-- macOS
+- macOS or Windows
 - Rust toolchain
 - OpenAI API key
 
@@ -31,21 +31,29 @@ cargo build
 
 ## CI
 
-GitHub Actions runs on every pull request to `main` and every push to `main`. CI is split into separate checks so failures are easy to diagnose:
+GitHub Actions runs on every pull request to `main` and every push to `main`. CI is split into separate macOS and Windows checks so failures are easy to diagnose:
 
 | Check | Command |
 | --- | --- |
-| `format` | `cargo fmt -- --check` |
-| `clippy` | `cargo clippy --all-targets -- -D warnings` |
-| `test` | `cargo test` |
-| `build` | `cargo build` |
+| `format (macOS)` / `format (Windows)` | `cargo fmt -- --check` |
+| `clippy (macOS)` / `clippy (Windows)` | `cargo clippy --all-targets -- -D warnings` |
+| `test (macOS)` / `test (Windows)` | `cargo test` |
+| `build (macOS)` / `build (Windows)` | `cargo build` |
 
-The `main` branch is protected. Pull requests must be up to date and pass all four checks before they can be merged. Merged PR branches are deleted automatically.
+The `main` branch is protected. Pull requests must be up to date and pass all required macOS and Windows checks before they can be merged. Merged PR branches are deleted automatically.
 
 ## Run
 
 ```sh
 export OPENAI_API_KEY="your_api_key"
+cargo run -- "explain Rust ownership in two sentences"
+cargo run -- "what was my previous question?"
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:OPENAI_API_KEY = "your_api_key"
 cargo run -- "explain Rust ownership in two sentences"
 cargo run -- "what was my previous question?"
 ```
@@ -67,7 +75,7 @@ cargo install --path .
 our-cli "hello"
 ```
 
-After publishing the repo to GitHub, another Mac with Rust installed can install it directly:
+After publishing the repo to GitHub, another macOS or Windows machine with Rust installed can install it directly:
 
 ```sh
 cargo install --git https://github.com/CherifD/our-cli.git
@@ -80,6 +88,12 @@ Conversation memory is saved as plain text:
 
 ```text
 ~/.config/our-cli/conversation.txt
+```
+
+On Windows, the config directory comes from the operating system, usually:
+
+```text
+%APPDATA%\our-cli\conversation.txt
 ```
 
 Use:
