@@ -1,0 +1,16 @@
+[package]
+name = "our-cli"
+version = "0.1.0"
+edition = "2021"
+description = "A macOS Rust CLI twin of asm-agent."
+license = "MIT"
+
+[package.metadata]
+check-command = "sh scripts/check.sh"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+dirs = "6"
+reqwest = { version = "0.12", features = ["blocking", "json", "rustls-tls"], default-features = false }
+serde_json = "1"
