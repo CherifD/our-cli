@@ -1,6 +1,16 @@
 # our-cli
 
-`our-cli` is a Rust twin of `asm-agent`: a cross-platform CLI that talks to OpenAI, remembers local conversation history, prints token usage, and supports configurable terminal colors.
+`our-cli` is a cross-platform Rust CLI that talks to OpenAI, remembers local conversation history, prints token usage, supports configurable terminal colors, and ships with a growing test suite.
+
+## Capabilities
+
+- Single-shot prompts with configurable model, base URL, instructions, and output limit
+- Interactive `chat` mode with multiline prompt editing and `/exit` or `/quit` to leave
+- Local conversation history stored as JSON and reused across prompts
+- `history` and `reset` commands for inspecting or clearing stored memory
+- Configurable prompt and assistant colors, with `NO_COLOR` and `OUR_CLI_COLOR` support
+- Offline test and smoke-test support through mock response environment variables
+- Coverage-gated test workflow with unit tests, CLI integration tests, clippy, and build checks
 
 ## Requirements
 
