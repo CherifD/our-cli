@@ -3,21 +3,35 @@ use clap::{Parser, Subcommand};
 use reqwest::blocking::Client;
 use rustyline::completion::{Completer, Pair};
 use rustyline::error::ReadlineError;
-use rustyline::highlight::Highlighter;
+use rustyline::highlight::{CmdKind, Highlighter};
 use rustyline::hint::Hinter;
 use rustyline::history::DefaultHistory;
 use rustyline::validate::{ValidationContext, ValidationResult, Validator};
 use rustyline::{Context as RustylineContext, Editor, Helper};
 use serde_json::{json, Value};
+use std::borrow::Cow;
 use std::env;
 use std::fs;
 use std::io::{self, IsTerminal, Write};
+#[cfg(unix)]
+use std::os::fd::AsRawFd;
 use std::path::PathBuf;
+#[cfg(unix)]
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+#[cfg(unix)]
+use std::thread::{self, JoinHandle};
+#[cfg(unix)]
+use std::time::Duration;
 
 const DEFAULT_MODEL: &str = "gpt-5.4-mini";
 const DEFAULT_INSTRUCTIONS: &str = "You are a concise terminal assistant. Answer directly, avoid markdown tables unless useful, and keep responses practical.";
 const DEFAULT_PROMPT_COLOR: &str = "d8ae6dfc";
 const DEFAULT_ASSISTANT_COLOR: &str = "00ffff";
+#[cfg(unix)]
+const PENDING_INPUT_DRAIN_GRACE: Duration = Duration::from_millis(100);
 
 #[derive(Parser)]
 #[command(name = "our-cli")]
@@ -49,7 +63,42 @@ enum ChatInput {
     Eof,
 }
 
-struct MultilineHelper;
+const CHAT_EDITOR_PROMPT: &str = "> ";
+
+struct MultilineHelper {
+    input_color: Option<String>,
+    colored_prompt: Option<String>,
+}
+
+#[cfg(unix)]
+struct PendingInputGuard {
+    fd: libc::c_int,
+    original: libc::termios,
+    original_flags: libc::c_int,
+    stop: Arc<AtomicBool>,
+    drain_thread: Option<JoinHandle<()>>,
+}
+
+#[cfg(not(unix))]
+struct PendingInputGuard;
+
+impl MultilineHelper {
+    fn new() -> Self {
+        if use_color() {
+            let input_color = color_sequence("OUR_CLI_PROMPT_COLOR", DEFAULT_PROMPT_COLOR);
+            let colored_prompt = format!("{input_color}{CHAT_EDITOR_PROMPT}\x1b[0m");
+            Self {
+                input_color: Some(input_color),
+                colored_prompt: Some(colored_prompt),
+            }
+        } else {
+            Self {
+                input_color: None,
+                colored_prompt: None,
+            }
+        }
+    }
+}
 
 impl Helper for MultilineHelper {}
 
@@ -70,11 +119,163 @@ impl Hinter for MultilineHelper {
     type Hint = String;
 }
 
-impl Highlighter for MultilineHelper {}
+impl Highlighter for MultilineHelper {
+    fn highlight_prompt<'b, 's: 'b, 'p: 'b>(
+        &'s self,
+        prompt: &'p str,
+        default: bool,
+    ) -> Cow<'b, str> {
+        if default {
+            if let Some(colored_prompt) = &self.colored_prompt {
+                return Cow::Borrowed(colored_prompt.as_str());
+            }
+        }
+
+        Cow::Borrowed(prompt)
+    }
+
+    fn highlight<'l>(&self, line: &'l str, _pos: usize) -> Cow<'l, str> {
+        if let Some(input_color) = &self.input_color {
+            Cow::Owned(format!("{input_color}{line}\x1b[0m"))
+        } else {
+            Cow::Borrowed(line)
+        }
+    }
+
+    fn highlight_char(&self, _line: &str, _pos: usize, _kind: CmdKind) -> bool {
+        self.input_color.is_some()
+    }
+}
 
 impl Validator for MultilineHelper {
     fn validate(&self, ctx: &mut ValidationContext<'_>) -> rustyline::Result<ValidationResult> {
         Ok(validate_chat_editor_input(ctx.input()))
+    }
+}
+
+#[cfg(unix)]
+impl PendingInputGuard {
+    fn new() -> Result<Self> {
+        let stdin = io::stdin();
+        let fd = stdin.as_raw_fd();
+        let original_flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+        if original_flags < 0 {
+            return Err(io::Error::last_os_error())
+                .context("Could not inspect terminal input flags");
+        }
+
+        let mut termios = unsafe {
+            let mut termios = std::mem::zeroed();
+            if libc::tcgetattr(fd, &mut termios) != 0 {
+                return Err(io::Error::last_os_error()).context("Could not read terminal settings");
+            }
+            termios
+        };
+        let original = termios;
+
+        termios.c_lflag &= !(libc::ECHO | libc::ICANON | libc::IEXTEN | libc::ISIG);
+        termios.c_cc[libc::VMIN] = 1;
+        termios.c_cc[libc::VTIME] = 0;
+
+        if unsafe { libc::tcsetattr(fd, libc::TCSAFLUSH, &termios) } != 0 {
+            return Err(io::Error::last_os_error()).context("Could not block pending input");
+        }
+
+        if unsafe { libc::fcntl(fd, libc::F_SETFL, original_flags | libc::O_NONBLOCK) } < 0 {
+            let _ = unsafe { libc::tcsetattr(fd, libc::TCSAFLUSH, &original) };
+            return Err(io::Error::last_os_error()).context("Could not drain terminal input");
+        }
+
+        drain_nonblocking_input(fd)?;
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let drain_stop = Arc::clone(&stop);
+        let drain_thread = thread::spawn(move || {
+            while !drain_stop.load(Ordering::Relaxed) {
+                let _ = drain_nonblocking_input(fd);
+                thread::sleep(Duration::from_millis(10));
+            }
+            let _ = drain_nonblocking_input(fd);
+        });
+
+        Ok(Self {
+            fd,
+            original,
+            original_flags,
+            stop,
+            drain_thread: Some(drain_thread),
+        })
+    }
+}
+
+#[cfg(unix)]
+impl Drop for PendingInputGuard {
+    fn drop(&mut self) {
+        thread::sleep(PENDING_INPUT_DRAIN_GRACE);
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(drain_thread) = self.drain_thread.take() {
+            let _ = drain_thread.join();
+        }
+        let _ = drain_nonblocking_input(self.fd);
+        unsafe {
+            libc::tcflush(self.fd, libc::TCIFLUSH);
+            libc::fcntl(self.fd, libc::F_SETFL, self.original_flags);
+            libc::tcsetattr(self.fd, libc::TCSAFLUSH, &self.original);
+        }
+    }
+}
+
+#[cfg(not(unix))]
+impl PendingInputGuard {
+    fn new() -> Result<Self> {
+        Ok(Self)
+    }
+}
+
+#[cfg(unix)]
+fn drain_pending_input(fd: libc::c_int) -> Result<()> {
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    if flags < 0 {
+        return Err(io::Error::last_os_error()).context("Could not inspect terminal input flags");
+    }
+
+    if unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
+        return Err(io::Error::last_os_error()).context("Could not drain terminal input");
+    }
+
+    let drain_result = drain_nonblocking_input(fd);
+
+    if unsafe { libc::fcntl(fd, libc::F_SETFL, flags) } < 0 {
+        return Err(io::Error::last_os_error()).context("Could not restore terminal input flags");
+    }
+
+    drain_result?;
+
+    unsafe {
+        libc::tcflush(fd, libc::TCIFLUSH);
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn drain_nonblocking_input(fd: libc::c_int) -> Result<()> {
+    let mut buf = [0_u8; 1024];
+    loop {
+        let read = unsafe { libc::read(fd, buf.as_mut_ptr().cast(), buf.len()) };
+        if read > 0 {
+            continue;
+        }
+
+        if read == 0 {
+            return Ok(());
+        }
+
+        let error = io::Error::last_os_error();
+        match error.kind() {
+            io::ErrorKind::WouldBlock => return Ok(()),
+            io::ErrorKind::Interrupted => continue,
+            _ => return Err(error).context("Could not drain terminal input"),
+        }
     }
 }
 
@@ -104,7 +305,7 @@ fn prompt(message: String) -> Result<()> {
 }
 
 fn chat() -> Result<()> {
-    println!("our-cli chat. Finish a message with a blank line. Type /exit to quit.");
+    println!("our-cli chat. Press return to send a message. Type /exit to quit.");
 
     if io::stdin().is_terminal() {
         return chat_with_editor();
@@ -130,21 +331,20 @@ fn chat() -> Result<()> {
 
 fn chat_with_editor() -> Result<()> {
     let mut editor: Editor<MultilineHelper, DefaultHistory> = Editor::new()?;
-    editor.set_helper(Some(MultilineHelper));
+    editor.set_helper(Some(MultilineHelper::new()));
 
     loop {
-        match editor.readline(&editor_prompt()) {
+        discard_pending_input()?;
+        match editor.readline(CHAT_EDITOR_PROMPT) {
             Ok(input) => {
                 let message = normalize_chat_editor_input(&input);
-                if message.trim().is_empty() {
-                    continue;
-                }
                 if is_exit_command(&message) {
                     break;
                 }
 
                 let _ = editor.add_history_entry(message.as_str());
                 let transcript = build_transcript(&message)?;
+                let _pending_input = PendingInputGuard::new()?;
                 let response = ask_agent(&transcript)?;
                 save_exchange(&transcript, &response.text)?;
                 print_response(&response);
@@ -154,6 +354,22 @@ fn chat_with_editor() -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+#[cfg(unix)]
+fn discard_pending_input() -> Result<()> {
+    let stdin = io::stdin();
+    let fd = stdin.as_raw_fd();
+    drain_pending_input(fd)?;
+    unsafe {
+        libc::tcflush(fd, libc::TCIFLUSH);
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn discard_pending_input() -> Result<()> {
     Ok(())
 }
 
@@ -204,10 +420,12 @@ fn read_chat_message_inner<R: io::BufRead>(reader: &mut R, show_prompt: bool) ->
 fn validate_chat_editor_input(input: &str) -> ValidationResult {
     let normalized = normalize_chat_editor_input(input);
 
-    if normalized.trim().is_empty() || is_exit_command(&normalized) || input.ends_with('\n') {
-        ValidationResult::Valid(None)
+    if normalized.trim().is_empty() {
+        ValidationResult::Invalid(Some(
+            "Enter a message, or type /exit to quit.\n".to_string(),
+        ))
     } else {
-        ValidationResult::Incomplete
+        ValidationResult::Valid(None)
     }
 }
 
@@ -408,19 +626,6 @@ fn print_prompt(first_line: bool) -> Result<()> {
     Ok(())
 }
 
-fn editor_prompt() -> String {
-    let marker = "> ";
-    if use_color() {
-        format!(
-            "{}{}\x1b[0m",
-            color_sequence("OUR_CLI_PROMPT_COLOR", DEFAULT_PROMPT_COLOR),
-            marker
-        )
-    } else {
-        marker.to_string()
-    }
-}
-
 fn reset_color() {
     if use_color() {
         print!("\x1b[0m");
@@ -590,10 +795,10 @@ mod tests {
     }
 
     #[test]
-    fn editor_input_is_incomplete_until_blank_submit() {
+    fn editor_input_is_valid_on_return() {
         assert!(matches!(
             validate_chat_editor_input("first line"),
-            ValidationResult::Incomplete
+            ValidationResult::Valid(None)
         ));
     }
 
@@ -619,5 +824,27 @@ mod tests {
             validate_chat_editor_input("/exit"),
             ValidationResult::Valid(None)
         ));
+    }
+
+    #[test]
+    fn editor_empty_input_is_invalid() {
+        assert!(matches!(
+            validate_chat_editor_input(""),
+            ValidationResult::Invalid(Some(_))
+        ));
+    }
+
+    #[test]
+    fn editor_highlighter_colors_prompt_and_input() {
+        let helper = MultilineHelper {
+            input_color: Some("\x1b[38;2;1;2;3m".to_string()),
+            colored_prompt: Some("\x1b[38;2;1;2;3m> \x1b[0m".to_string()),
+        };
+
+        assert_eq!(
+            helper.highlight_prompt(CHAT_EDITOR_PROMPT, true),
+            "\x1b[38;2;1;2;3m> \x1b[0m"
+        );
+        assert_eq!(helper.highlight("hello", 0), "\x1b[38;2;1;2;3mhello\x1b[0m");
     }
 }

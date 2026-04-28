@@ -679,6 +679,7 @@ dependencies = [
  "anyhow",
  "clap",
  "dirs",
+ "libc",
  "reqwest",
  "rustyline",
  "serde_json",
