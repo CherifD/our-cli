@@ -1,4 +1,7 @@
-use anyhow::{Context, Result};
+#[cfg(unix)]
+use anyhow::Context;
+use anyhow::Result;
+#[cfg(unix)]
 use std::io;
 #[cfg(unix)]
 use std::os::fd::AsRawFd;
@@ -101,6 +104,7 @@ impl Drop for PendingInputGuard {
 
 #[cfg(not(unix))]
 impl PendingInputGuard {
+    #[allow(clippy::unnecessary_wraps)]
     pub(super) fn new() -> Result<Self> {
         Ok(Self)
     }
@@ -118,6 +122,7 @@ pub(super) fn discard_pending_input() -> Result<()> {
 }
 
 #[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps)]
 pub(super) fn discard_pending_input() -> Result<()> {
     Ok(())
 }
