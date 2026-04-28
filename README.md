@@ -26,7 +26,15 @@ The check script runs:
 cargo fmt -- --check
 cargo clippy --all-targets -- -D warnings
 cargo test
+cargo llvm-cov --workspace --all-targets --summary-only  # when cargo-llvm-cov is installed
 cargo build
+```
+
+Coverage can also be run directly:
+
+```sh
+cargo install cargo-llvm-cov
+sh scripts/coverage.sh
 ```
 
 ## CI
@@ -38,6 +46,7 @@ GitHub Actions runs on every pull request to `main` and every push to `main`. CI
 | `format (macOS)` / `format (Windows)` | `cargo fmt -- --check` |
 | `clippy (macOS)` / `clippy (Windows)` | `cargo clippy --all-targets -- -D warnings` |
 | `test (macOS)` / `test (Windows)` | `cargo test` |
+| `coverage (macOS)` | `sh scripts/coverage.sh` |
 | `build (macOS)` / `build (Windows)` | `cargo build` |
 
 The `main` branch is protected. Pull requests must be up to date and pass all required macOS and Windows checks before they can be merged. Merged PR branches are deleted automatically.
