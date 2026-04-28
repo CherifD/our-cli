@@ -1,4 +1,5 @@
 use super::*;
+use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;
 
@@ -26,7 +27,7 @@ fn builds_transcript_after_existing_memory() {
 fn reads_missing_memory_as_empty() {
     let path = temp_state_path("missing");
 
-    assert_eq!(read_memory_at(&path).unwrap(), "");
+    assert!(read_memory_file_at(&path).unwrap().exchanges.is_empty());
 }
 
 #[test]
@@ -39,9 +40,18 @@ fn saves_exchange_and_creates_parent_directory() {
 
     save_exchange_at(&path, "User: hello", "Assistant text").unwrap();
 
+    let saved: Value = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
     assert_eq!(
-        fs::read_to_string(path).unwrap(),
-        "User: hello\n\nAssistant: Assistant text\n\n"
+        saved,
+        serde_json::json!({
+            "version": 1,
+            "exchanges": [
+                {
+                    "user": "User: hello",
+                    "assistant": "Assistant text"
+                }
+            ]
+        })
     );
 }
 
@@ -51,19 +61,72 @@ fn reset_memory_creates_empty_file() {
 
     reset_memory_at(&path).unwrap();
 
-    assert_eq!(fs::read_to_string(path).unwrap(), "");
+    let saved: Value = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+    assert_eq!(
+        saved,
+        serde_json::json!({
+            "version": 1,
+            "exchanges": []
+        })
+    );
+}
+
+#[test]
+fn renders_transcript_from_exchanges() {
+    let memory = MemoryFile {
+        version: 1,
+        exchanges: vec![
+            Exchange {
+                user: "old".to_string(),
+                assistant: "reply".to_string(),
+            },
+            Exchange {
+                user: "new".to_string(),
+                assistant: "answer".to_string(),
+            },
+        ],
+    };
+
+    assert_eq!(
+        render_transcript(&memory.exchanges),
+        "User: old\n\nAssistant: reply\n\nUser: new\n\nAssistant: answer"
+    );
 }
 
 #[test]
 fn trims_history_to_requested_lines() {
-    let text = "one\ntwo\nthree\nfour\n";
+    let mut memory = MemoryFile {
+        version: 1,
+        exchanges: vec![
+            Exchange {
+                user: "one".to_string(),
+                assistant: "two".to_string(),
+            },
+            Exchange {
+                user: "three".to_string(),
+                assistant: "four".to_string(),
+            },
+        ],
+    };
 
-    assert_eq!(trim_history_lines_to(text, 2), "three\nfour\n");
+    trim_history_to(&mut memory, 3);
+
+    assert_eq!(memory.exchanges.len(), 1);
+    assert_eq!(memory.exchanges[0].user, "three");
 }
 
 #[test]
 fn leaves_short_history_unchanged() {
-    let text = "one\ntwo\n";
+    let mut memory = MemoryFile {
+        version: 1,
+        exchanges: vec![Exchange {
+            user: "one".to_string(),
+            assistant: "two".to_string(),
+        }],
+    };
 
-    assert_eq!(trim_history_lines_to(text, 4), text);
+    trim_history_to(&mut memory, 4);
+
+    assert_eq!(memory.exchanges.len(), 1);
+    assert_eq!(memory.exchanges[0].assistant, "two");
 }

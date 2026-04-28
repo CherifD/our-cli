@@ -12,3 +12,4 @@ pub(crate) const ENV_OUR_CLI_MAX_HISTORY_LINES: &str = "OUR_CLI_MAX_HISTORY_LINE
 pub(crate) const ENV_OUR_CLI_MOCK_RESPONSE: &str = "OUR_CLI_MOCK_RESPONSE";
 pub(crate) const ENV_OUR_CLI_MOCK_TOTAL_TOKENS: &str = "OUR_CLI_MOCK_TOTAL_TOKENS";
 pub(crate) const ENV_OUR_CLI_PROMPT_COLOR: &str = "OUR_CLI_PROMPT_COLOR";
+pub(crate) const ENV_OUR_CLI_STATE: &str = "OUR_CLI_STATE";

@@ -30,7 +30,7 @@ pub(crate) fn chat() -> Result<()> {
 
         let transcript = build_transcript(&message)?;
         let response = ask_agent(&transcript)?;
-        save_exchange(&transcript, &response.text)?;
+        save_exchange(&message, &response.text)?;
         print_response(&response);
     }
 

@@ -682,6 +682,7 @@ dependencies = [
  "libc",
  "reqwest",
  "rustyline",
+ "serde",
  "serde_json",
 ]
 

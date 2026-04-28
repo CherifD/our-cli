@@ -97,16 +97,16 @@ our-cli "hello from GitHub"
 
 ## Memory
 
-Conversation memory is saved as plain text:
+Conversation memory is saved as JSON:
 
 ```text
-~/.config/our-cli/conversation.txt
+~/.config/our-cli/conversation.json
 ```
 
 On Windows, the config directory comes from the operating system, usually:
 
 ```text
-%APPDATA%\our-cli\conversation.txt
+%APPDATA%\our-cli\conversation.json
 ```
 
 Use:

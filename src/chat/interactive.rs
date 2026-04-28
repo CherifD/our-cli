@@ -26,7 +26,7 @@ pub(super) fn chat_with_editor() -> Result<()> {
                 let transcript = build_transcript(&message)?;
                 let _pending_input = PendingInputGuard::new()?;
                 let response = ask_agent(&transcript)?;
-                save_exchange(&transcript, &response.text)?;
+                save_exchange(&message, &response.text)?;
                 print_response(&response);
             }
             Err(ReadlineError::Interrupted | ReadlineError::Eof) => break,

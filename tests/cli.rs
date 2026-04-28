@@ -1,3 +1,4 @@
+use serde_json::Value;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -116,8 +117,9 @@ fn chat_reads_piped_messages_until_exit() {
     assert!(stdout.contains("chat response"));
 
     let history = fs::read_to_string(&state).unwrap();
-    assert!(history.contains("User: hello from chat"));
-    assert!(history.contains("Assistant: chat response"));
+    let history: Value = serde_json::from_str(&history).unwrap();
+    assert_eq!(history["exchanges"][0]["user"], "hello from chat");
+    assert_eq!(history["exchanges"][0]["assistant"], "chat response");
 }
 
 #[test]
