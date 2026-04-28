@@ -4,6 +4,7 @@ mod interactive;
 mod terminal;
 
 use crate::agent::ask_agent;
+use crate::constants::APP_NAME;
 use crate::memory::{build_transcript, save_exchange};
 use crate::output::print_response;
 use anyhow::Result;
@@ -12,7 +13,7 @@ use interactive::chat_with_editor;
 use std::io::{self, IsTerminal};
 
 pub(crate) fn chat() -> Result<()> {
-    println!("our-cli chat. Press return to send a message. Type /exit to quit.");
+    println!("{APP_NAME} chat. Press return to send a message. Type /exit to quit.");
 
     if io::stdin().is_terminal() {
         return chat_with_editor();

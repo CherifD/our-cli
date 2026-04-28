@@ -1,8 +1,13 @@
+use crate::constants::{APP_NAME, ENV_OUR_CLI_MAX_HISTORY_LINES};
 use anyhow::{anyhow, Result};
 use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+
+const USER_PREFIX: &str = "User:";
+const ASSISTANT_PREFIX: &str = "Assistant:";
+const STATE_FILE_NAME: &str = "conversation.txt";
 
 pub(crate) fn build_transcript(message: &str) -> Result<String> {
     let existing = read_memory()?;
@@ -11,9 +16,9 @@ pub(crate) fn build_transcript(message: &str) -> Result<String> {
 
 fn build_transcript_from_memory(existing: &str, message: &str) -> String {
     if existing.trim().is_empty() {
-        format!("User: {message}")
+        format!("{USER_PREFIX} {message}")
     } else {
-        format!("{}\n\nUser: {message}", existing.trim_end())
+        format!("{}\n\n{USER_PREFIX} {message}", existing.trim_end())
     }
 }
 
@@ -39,7 +44,7 @@ fn save_exchange_at(path: &Path, transcript: &str, answer: &str) -> Result<()> {
         fs::create_dir_all(parent)?;
     }
 
-    let text = trim_history_lines(&format!("{transcript}\n\nAssistant: {answer}\n\n"));
+    let text = trim_history_lines(&format!("{transcript}\n\n{ASSISTANT_PREFIX} {answer}\n\n"));
     fs::write(path, text)?;
     Ok(())
 }
@@ -58,7 +63,7 @@ fn reset_memory_at(path: &Path) -> Result<()> {
 }
 
 fn trim_history_lines(text: &str) -> String {
-    let max_lines = env::var("OUR_CLI_MAX_HISTORY_LINES")
+    let max_lines = env::var(ENV_OUR_CLI_MAX_HISTORY_LINES)
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|value| *value > 0)
@@ -85,7 +90,7 @@ fn state_path() -> Result<PathBuf> {
 
     let config_dir =
         dirs::config_dir().ok_or_else(|| anyhow!("Could not locate user config directory."))?;
-    Ok(config_dir.join("our-cli").join("conversation.txt"))
+    Ok(config_dir.join(APP_NAME).join(STATE_FILE_NAME))
 }
 
 #[cfg(test)]

@@ -1,3 +1,8 @@
+use crate::constants::{
+    ENV_AI_API_KEY, ENV_OPENAI_API_KEY, ENV_OPENAI_BASE_URL, ENV_OPENAI_MAX_OUTPUT_TOKENS,
+    ENV_OPENAI_MODEL, ENV_OUR_CLI_INSTRUCTIONS, ENV_OUR_CLI_MOCK_RESPONSE,
+    ENV_OUR_CLI_MOCK_TOTAL_TOKENS,
+};
 use anyhow::{anyhow, Context, Result};
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
@@ -5,7 +10,13 @@ use serde_json::{json, Value};
 use std::env;
 
 const DEFAULT_MODEL: &str = "gpt-5.4-mini";
+const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 const DEFAULT_INSTRUCTIONS: &str = "You are a concise terminal assistant. Answer directly, avoid markdown tables unless useful, and keep responses practical.";
+const DEFAULT_MAX_OUTPUT_TOKENS: &str = "800";
+const ENV_ASM_AGENT_INSTRUCTIONS: &str = "ASM_AGENT_INSTRUCTIONS";
+const RESPONSES_PATH: &str = "responses";
+const TYPE_MESSAGE: &str = "message";
+const TYPE_OUTPUT_TEXT: &str = "output_text";
 
 #[derive(Debug)]
 pub(crate) struct AgentResponse {
@@ -28,17 +39,16 @@ impl AgentConfig {
     }
 
     fn from_env_vars(get: impl Fn(&str) -> Option<String>) -> Result<Self> {
-        let api_key = get("OPENAI_API_KEY")
-            .or_else(|| get("AI_API_KEY"))
+        let api_key = get(ENV_OPENAI_API_KEY)
+            .or_else(|| get(ENV_AI_API_KEY))
             .context("Missing OPENAI_API_KEY. Set it before calling the AI helper.")?;
-        let model = get("OPENAI_MODEL").unwrap_or_else(|| DEFAULT_MODEL.to_string());
-        let base_url =
-            get("OPENAI_BASE_URL").unwrap_or_else(|| "https://api.openai.com/v1".to_string());
-        let instructions = get("OUR_CLI_INSTRUCTIONS")
-            .or_else(|| get("ASM_AGENT_INSTRUCTIONS"))
+        let model = get(ENV_OPENAI_MODEL).unwrap_or_else(|| DEFAULT_MODEL.to_string());
+        let base_url = get(ENV_OPENAI_BASE_URL).unwrap_or_else(|| DEFAULT_BASE_URL.to_string());
+        let instructions = get(ENV_OUR_CLI_INSTRUCTIONS)
+            .or_else(|| get(ENV_ASM_AGENT_INSTRUCTIONS))
             .unwrap_or_else(|| DEFAULT_INSTRUCTIONS.to_string());
-        let max_output_tokens = get("OPENAI_MAX_OUTPUT_TOKENS")
-            .unwrap_or_else(|| "800".to_string())
+        let max_output_tokens = get(ENV_OPENAI_MAX_OUTPUT_TOKENS)
+            .unwrap_or_else(|| DEFAULT_MAX_OUTPUT_TOKENS.to_string())
             .parse::<u64>()
             .context("OPENAI_MAX_OUTPUT_TOKENS must be a positive integer.")?;
 
@@ -52,7 +62,7 @@ impl AgentConfig {
     }
 
     fn endpoint_url(&self) -> String {
-        format!("{}/responses", self.base_url.trim_end_matches('/'))
+        format!("{}/{}", self.base_url.trim_end_matches('/'), RESPONSES_PATH)
     }
 
     fn request_body(&self, input: &str) -> Value {
@@ -66,8 +76,8 @@ impl AgentConfig {
 }
 
 pub(crate) fn ask_agent(input: &str) -> Result<AgentResponse> {
-    if let Ok(mock) = env::var("OUR_CLI_MOCK_RESPONSE") {
-        let total_tokens = env::var("OUR_CLI_MOCK_TOTAL_TOKENS")
+    if let Ok(mock) = env::var(ENV_OUR_CLI_MOCK_RESPONSE) {
+        let total_tokens = env::var(ENV_OUR_CLI_MOCK_TOTAL_TOKENS)
             .ok()
             .and_then(|value| value.parse::<u64>().ok());
         return Ok(AgentResponse {
@@ -119,11 +129,11 @@ fn extract_response_text(body: &Value) -> Option<String> {
     let mut chunks = Vec::new();
     let output = body.get("output")?.as_array()?;
     for item in output {
-        if item.get("type").and_then(Value::as_str) != Some("message") {
+        if item.get("type").and_then(Value::as_str) != Some(TYPE_MESSAGE) {
             continue;
         }
         for content in item.get("content").and_then(Value::as_array)? {
-            if content.get("type").and_then(Value::as_str) == Some("output_text") {
+            if content.get("type").and_then(Value::as_str) == Some(TYPE_OUTPUT_TEXT) {
                 if let Some(text) = content.get("text").and_then(Value::as_str) {
                     chunks.push(text);
                 }

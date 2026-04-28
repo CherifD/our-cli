@@ -1,4 +1,5 @@
 use crate::chat::input::normalize_chat_editor_input;
+use crate::constants::ENV_OUR_CLI_PROMPT_COLOR;
 use crate::output::{color_sequence, use_color, DEFAULT_PROMPT_COLOR};
 use rustyline::completion::{Completer, Pair};
 use rustyline::highlight::{CmdKind, Highlighter};
@@ -17,7 +18,7 @@ pub(super) struct MultilineHelper {
 impl MultilineHelper {
     pub(super) fn new() -> Self {
         if use_color() {
-            let input_color = color_sequence("OUR_CLI_PROMPT_COLOR", DEFAULT_PROMPT_COLOR);
+            let input_color = color_sequence(ENV_OUR_CLI_PROMPT_COLOR, DEFAULT_PROMPT_COLOR);
             let colored_prompt = format!("{input_color}{CHAT_EDITOR_PROMPT}\x1b[0m");
             Self {
                 input_color: Some(input_color),

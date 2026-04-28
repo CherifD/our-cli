@@ -1,0 +1,14 @@
+pub(crate) const APP_NAME: &str = "our-cli";
+pub(crate) const ENV_AI_API_KEY: &str = "AI_API_KEY";
+pub(crate) const ENV_NO_COLOR: &str = "NO_COLOR";
+pub(crate) const ENV_OPENAI_API_KEY: &str = "OPENAI_API_KEY";
+pub(crate) const ENV_OPENAI_BASE_URL: &str = "OPENAI_BASE_URL";
+pub(crate) const ENV_OPENAI_MAX_OUTPUT_TOKENS: &str = "OPENAI_MAX_OUTPUT_TOKENS";
+pub(crate) const ENV_OPENAI_MODEL: &str = "OPENAI_MODEL";
+pub(crate) const ENV_OUR_CLI_ASSISTANT_COLOR: &str = "OUR_CLI_ASSISTANT_COLOR";
+pub(crate) const ENV_OUR_CLI_COLOR: &str = "OUR_CLI_COLOR";
+pub(crate) const ENV_OUR_CLI_INSTRUCTIONS: &str = "OUR_CLI_INSTRUCTIONS";
+pub(crate) const ENV_OUR_CLI_MAX_HISTORY_LINES: &str = "OUR_CLI_MAX_HISTORY_LINES";
+pub(crate) const ENV_OUR_CLI_MOCK_RESPONSE: &str = "OUR_CLI_MOCK_RESPONSE";
+pub(crate) const ENV_OUR_CLI_MOCK_TOTAL_TOKENS: &str = "OUR_CLI_MOCK_TOTAL_TOKENS";
+pub(crate) const ENV_OUR_CLI_PROMPT_COLOR: &str = "OUR_CLI_PROMPT_COLOR";

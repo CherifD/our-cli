@@ -1,10 +1,16 @@
 use crate::agent::AgentResponse;
+use crate::constants::{
+    ENV_NO_COLOR, ENV_OUR_CLI_ASSISTANT_COLOR, ENV_OUR_CLI_COLOR, ENV_OUR_CLI_PROMPT_COLOR,
+};
 use anyhow::Result;
 use std::env;
 use std::io::{self, IsTerminal, Write};
 
 pub(crate) const DEFAULT_PROMPT_COLOR: &str = "d8ae6dfc";
 const DEFAULT_ASSISTANT_COLOR: &str = "00ffff";
+const ANSI_RESET: &str = "\x1b[0m";
+const ANSI_DIM: &str = "\x1b[2m";
+const COLOR_NEVER: &str = "never";
 
 pub(crate) fn print_response(response: &AgentResponse) {
     print!("{}", format_response(response, use_color()));
@@ -18,16 +24,16 @@ pub(crate) fn print_prompt(first_line: bool) -> Result<()> {
 
 pub(crate) fn reset_color() {
     if use_color() {
-        print!("\x1b[0m");
+        print!("{ANSI_RESET}");
         let _ = io::stdout().flush();
     }
 }
 
 pub(crate) fn use_color() -> bool {
     io::stdout().is_terminal()
-        && env::var_os("NO_COLOR").is_none()
-        && env::var("OUR_CLI_COLOR")
-            .map(|value| value != "never")
+        && env::var_os(ENV_NO_COLOR).is_none()
+        && env::var(ENV_OUR_CLI_COLOR)
+            .map(|value| value != COLOR_NEVER)
             .unwrap_or(true)
 }
 
@@ -40,8 +46,8 @@ pub(crate) fn color_sequence(env_name: &str, fallback: &str) -> String {
 fn format_response(response: &AgentResponse, color: bool) -> String {
     let mut output = if color {
         format!(
-            "{}{}\x1b[0m\n",
-            color_sequence("OUR_CLI_ASSISTANT_COLOR", DEFAULT_ASSISTANT_COLOR),
+            "{}{}{ANSI_RESET}\n",
+            color_sequence(ENV_OUR_CLI_ASSISTANT_COLOR, DEFAULT_ASSISTANT_COLOR),
             response.text
         )
     } else {
@@ -50,7 +56,9 @@ fn format_response(response: &AgentResponse, color: bool) -> String {
 
     if let Some(total_tokens) = response.total_tokens {
         if color {
-            output.push_str(&format!("\n\x1b[2m[tokens: {total_tokens}]\x1b[0m\n"));
+            output.push_str(&format!(
+                "\n{ANSI_DIM}[tokens: {total_tokens}]{ANSI_RESET}\n"
+            ));
         } else {
             output.push_str(&format!("\n[tokens: {total_tokens}]\n"));
         }
@@ -64,7 +72,7 @@ fn format_prompt(first_line: bool, color: bool) -> String {
     if color {
         format!(
             "{}{}",
-            color_sequence("OUR_CLI_PROMPT_COLOR", DEFAULT_PROMPT_COLOR),
+            color_sequence(ENV_OUR_CLI_PROMPT_COLOR, DEFAULT_PROMPT_COLOR),
             marker
         )
     } else {
