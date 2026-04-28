@@ -1,14 +1,68 @@
 use anyhow::{anyhow, Context, Result};
 use reqwest::blocking::Client;
+use reqwest::StatusCode;
 use serde_json::{json, Value};
 use std::env;
 
 const DEFAULT_MODEL: &str = "gpt-5.4-mini";
 const DEFAULT_INSTRUCTIONS: &str = "You are a concise terminal assistant. Answer directly, avoid markdown tables unless useful, and keep responses practical.";
 
+#[derive(Debug)]
 pub(crate) struct AgentResponse {
     pub(crate) text: String,
     pub(crate) total_tokens: Option<u64>,
+}
+
+#[derive(Debug)]
+struct AgentConfig {
+    api_key: String,
+    model: String,
+    base_url: String,
+    instructions: String,
+    max_output_tokens: u64,
+}
+
+impl AgentConfig {
+    fn from_env() -> Result<Self> {
+        Self::from_env_vars(|name| env::var(name).ok())
+    }
+
+    fn from_env_vars(get: impl Fn(&str) -> Option<String>) -> Result<Self> {
+        let api_key = get("OPENAI_API_KEY")
+            .or_else(|| get("AI_API_KEY"))
+            .context("Missing OPENAI_API_KEY. Set it before calling the AI helper.")?;
+        let model = get("OPENAI_MODEL").unwrap_or_else(|| DEFAULT_MODEL.to_string());
+        let base_url =
+            get("OPENAI_BASE_URL").unwrap_or_else(|| "https://api.openai.com/v1".to_string());
+        let instructions = get("OUR_CLI_INSTRUCTIONS")
+            .or_else(|| get("ASM_AGENT_INSTRUCTIONS"))
+            .unwrap_or_else(|| DEFAULT_INSTRUCTIONS.to_string());
+        let max_output_tokens = get("OPENAI_MAX_OUTPUT_TOKENS")
+            .unwrap_or_else(|| "800".to_string())
+            .parse::<u64>()
+            .context("OPENAI_MAX_OUTPUT_TOKENS must be a positive integer.")?;
+
+        Ok(Self {
+            api_key,
+            model,
+            base_url,
+            instructions,
+            max_output_tokens,
+        })
+    }
+
+    fn endpoint_url(&self) -> String {
+        format!("{}/responses", self.base_url.trim_end_matches('/'))
+    }
+
+    fn request_body(&self, input: &str) -> Value {
+        json!({
+            "model": self.model,
+            "instructions": self.instructions,
+            "input": input,
+            "max_output_tokens": self.max_output_tokens
+        })
+    }
 }
 
 pub(crate) fn ask_agent(input: &str) -> Result<AgentResponse> {
@@ -22,30 +76,12 @@ pub(crate) fn ask_agent(input: &str) -> Result<AgentResponse> {
         });
     }
 
-    let api_key = env::var("OPENAI_API_KEY")
-        .or_else(|_| env::var("AI_API_KEY"))
-        .context("Missing OPENAI_API_KEY. Set it before calling the AI helper.")?;
-    let model = env::var("OPENAI_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
-    let base_url =
-        env::var("OPENAI_BASE_URL").unwrap_or_else(|_| "https://api.openai.com/v1".to_string());
-    let instructions = env::var("OUR_CLI_INSTRUCTIONS")
-        .or_else(|_| env::var("ASM_AGENT_INSTRUCTIONS"))
-        .unwrap_or_else(|_| DEFAULT_INSTRUCTIONS.to_string());
-    let max_output_tokens = env::var("OPENAI_MAX_OUTPUT_TOKENS")
-        .unwrap_or_else(|_| "800".to_string())
-        .parse::<u64>()
-        .context("OPENAI_MAX_OUTPUT_TOKENS must be a positive integer.")?;
-
+    let config = AgentConfig::from_env()?;
     let client = Client::new();
     let response = client
-        .post(format!("{}/responses", base_url.trim_end_matches('/')))
-        .bearer_auth(api_key)
-        .json(&json!({
-            "model": model,
-            "instructions": instructions,
-            "input": input,
-            "max_output_tokens": max_output_tokens
-        }))
+        .post(config.endpoint_url())
+        .bearer_auth(&config.api_key)
+        .json(&config.request_body(input))
         .send()
         .context("OpenAI request failed before receiving a response.")?;
 
@@ -54,6 +90,10 @@ pub(crate) fn ask_agent(input: &str) -> Result<AgentResponse> {
         .json()
         .context("OpenAI response was not valid JSON.")?;
 
+    parse_agent_response(status, body)
+}
+
+fn parse_agent_response(status: StatusCode, body: Value) -> Result<AgentResponse> {
     if !status.is_success() {
         let message = body
             .pointer("/error/message")

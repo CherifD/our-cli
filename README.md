@@ -26,7 +26,7 @@ The check script runs:
 cargo fmt -- --check
 cargo clippy --all-targets -- -D warnings
 cargo test
-cargo llvm-cov --workspace --all-targets --summary-only  # when cargo-llvm-cov is installed
+sh scripts/coverage.sh  # when cargo-llvm-cov is installed
 cargo build
 ```
 
@@ -36,6 +36,8 @@ Coverage can also be run directly:
 cargo install cargo-llvm-cov
 sh scripts/coverage.sh
 ```
+
+Coverage must stay at or above 85% line coverage. The raw terminal input shim and interactive editor loop are excluded from the metric because they depend on live TTY state.
 
 ## CI
 

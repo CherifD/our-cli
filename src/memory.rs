@@ -2,19 +2,27 @@ use anyhow::{anyhow, Result};
 use std::env;
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub(crate) fn build_transcript(message: &str) -> Result<String> {
     let existing = read_memory()?;
+    Ok(build_transcript_from_memory(&existing, message))
+}
+
+fn build_transcript_from_memory(existing: &str, message: &str) -> String {
     if existing.trim().is_empty() {
-        Ok(format!("User: {message}"))
+        format!("User: {message}")
     } else {
-        Ok(format!("{}\n\nUser: {message}", existing.trim_end()))
+        format!("{}\n\nUser: {message}", existing.trim_end())
     }
 }
 
 pub(crate) fn read_memory() -> Result<String> {
-    match fs::read_to_string(state_path()?) {
+    read_memory_at(&state_path()?)
+}
+
+fn read_memory_at(path: &Path) -> Result<String> {
+    match fs::read_to_string(path) {
         Ok(text) => Ok(text),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(String::new()),
         Err(error) => Err(error.into()),
@@ -23,6 +31,10 @@ pub(crate) fn read_memory() -> Result<String> {
 
 pub(crate) fn save_exchange(transcript: &str, answer: &str) -> Result<()> {
     let path = state_path()?;
+    save_exchange_at(&path, transcript, answer)
+}
+
+fn save_exchange_at(path: &Path, transcript: &str, answer: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -34,6 +46,10 @@ pub(crate) fn save_exchange(transcript: &str, answer: &str) -> Result<()> {
 
 pub(crate) fn reset_memory() -> Result<()> {
     let path = state_path()?;
+    reset_memory_at(&path)
+}
+
+fn reset_memory_at(path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }

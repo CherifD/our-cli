@@ -7,36 +7,11 @@ pub(crate) const DEFAULT_PROMPT_COLOR: &str = "d8ae6dfc";
 const DEFAULT_ASSISTANT_COLOR: &str = "00ffff";
 
 pub(crate) fn print_response(response: &AgentResponse) {
-    if use_color() {
-        println!(
-            "{}{}\x1b[0m",
-            color_sequence("OUR_CLI_ASSISTANT_COLOR", DEFAULT_ASSISTANT_COLOR),
-            response.text
-        );
-    } else {
-        println!("{}", response.text);
-    }
-
-    if let Some(total_tokens) = response.total_tokens {
-        if use_color() {
-            println!("\n\x1b[2m[tokens: {total_tokens}]\x1b[0m");
-        } else {
-            println!("\n[tokens: {total_tokens}]");
-        }
-    }
+    print!("{}", format_response(response, use_color()));
 }
 
 pub(crate) fn print_prompt(first_line: bool) -> Result<()> {
-    let marker = if first_line { "> " } else { "| " };
-    if use_color() {
-        print!(
-            "{}{}",
-            color_sequence("OUR_CLI_PROMPT_COLOR", DEFAULT_PROMPT_COLOR),
-            marker
-        );
-    } else {
-        print!("{marker}");
-    }
+    print!("{}", format_prompt(first_line, use_color()));
     io::stdout().flush()?;
     Ok(())
 }
@@ -60,6 +35,41 @@ pub(crate) fn color_sequence(env_name: &str, fallback: &str) -> String {
     let value = env::var(env_name).unwrap_or_else(|_| fallback.to_string());
     let (red, green, blue) = resolve_hex_color(&value, fallback);
     format!("\x1b[38;2;{red};{green};{blue}m")
+}
+
+fn format_response(response: &AgentResponse, color: bool) -> String {
+    let mut output = if color {
+        format!(
+            "{}{}\x1b[0m\n",
+            color_sequence("OUR_CLI_ASSISTANT_COLOR", DEFAULT_ASSISTANT_COLOR),
+            response.text
+        )
+    } else {
+        format!("{}\n", response.text)
+    };
+
+    if let Some(total_tokens) = response.total_tokens {
+        if color {
+            output.push_str(&format!("\n\x1b[2m[tokens: {total_tokens}]\x1b[0m\n"));
+        } else {
+            output.push_str(&format!("\n[tokens: {total_tokens}]\n"));
+        }
+    }
+
+    output
+}
+
+fn format_prompt(first_line: bool, color: bool) -> String {
+    let marker = if first_line { "> " } else { "| " };
+    if color {
+        format!(
+            "{}{}",
+            color_sequence("OUR_CLI_PROMPT_COLOR", DEFAULT_PROMPT_COLOR),
+            marker
+        )
+    } else {
+        marker.to_string()
+    }
 }
 
 fn resolve_hex_color(value: &str, fallback: &str) -> (u8, u8, u8) {

@@ -32,4 +32,9 @@ if command -v xcrun >/dev/null 2>&1; then
   fi
 fi
 
-cargo llvm-cov --workspace --all-targets --summary-only
+cargo llvm-cov \
+  --workspace \
+  --all-targets \
+  --summary-only \
+  --ignore-filename-regex '(^|/)src/chat/(terminal|interactive)\.rs$' \
+  --fail-under-lines 85
